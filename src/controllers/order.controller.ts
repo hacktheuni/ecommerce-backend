@@ -83,7 +83,7 @@ export const createOrderFromCart = async (req: AuthenticatedRequest, res: Respon
             productId: item.productId,
             quantity: item.quantity,
             priceAtPurchase: item.product.price,
-            productName: item.product.name,
+            productName: item.product.title,
           })),
         },
       },

@@ -7,8 +7,8 @@ import cartRoutes from './routes/cart.routes.ts';
 import orderRoutes from './routes/order.routes.ts';
 import reviewRoutes from './routes/review.routes.ts';
 import wishlistRoutes from './routes/wishlist.routes.ts';
+import conversationRoutes from './routes/conversation.routes.ts';
 import { ApiError } from './utils/ApiError.ts';
-import { authMiddleware, adminMiddleware } from './middlewares/auth.middleware.ts';
 
 const app = express();
 
@@ -27,6 +27,7 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/order', orderRoutes);
 app.use('/api/review', reviewRoutes);
 app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/conversation', conversationRoutes);
 
 // Global error handler
 app.use(

@@ -6,21 +6,26 @@ import { ApiResponse } from '../utils/ApiResponse.ts';
 import { generateAccessToken, generateRefreshToken } from '../utils/auth.ts';
 import type { AuthenticatedRequest } from '../middlewares/auth.middleware.ts';
 import type { Decimal } from '@prisma/client/runtime/client';
+import type { Condition, ProductStatus } from '../generated/prisma/client/client.ts';
 
-const sanitizeProduct = (product: { id: string; name: string; description: string | null; price: Decimal; }) => ({
+const sanitizeProduct = (product: { id: string; title: string; description: string | null; price: Decimal; }) => ({
   id: product.id,
-  name: product.name,
+  title: product.title,
   description: product.description,
   price: product.price
 });
 
 export const listProductsByFilter = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { category, minPrice, maxPrice } = req.query;
+    const { category, city, minPrice, maxPrice } = req.query;
 
     const filters: any = {};
     if (category) {
       filters.category = String(category);
+    }
+    console.log(filters)
+    if (city) {
+      filters.city = String(city);
     }
     console.log(filters)
     if (minPrice) {
@@ -47,16 +52,23 @@ export const listProductsByFilter = async (req: Request, res: Response, next: Ne
 
 
 
-// Admin routes
+// Seller routes
 export const createProduct = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+
   try {
-    const { name, description, price, stock, category, imageUrl  } = req.body ?? {};
-    if (!name || !description || price == null) {
-      return next(new ApiError(400, 'Name, description, and price are required'));
+
+    if (!req.user) {
+      return next(new ApiError(401, 'Unauthorized'));
     }
 
+    const { title, description, price, stock, status, condition, isNegotiable, category, city, state, country, latitude, longitude, imageUrl, views  } = req.body as { sellerId: string; title: string; description: string | null; price: Decimal; stock: number; status: ProductStatus; condition: Condition; isNegotiable: boolean; category: string; city: string; state: string; country: string; latitude: number; longitude: number; imageUrl: string; views: number } ?? {};
+
+    if (!title || price == null) {
+      return next(new ApiError(400, 'title and price are required'));
+    }
+    
     const product = await prisma.product.create({
-      data: { name, description, price, stock, category, imageUrl },
+      data: { sellerId: req.user.id, title, description, price, stock, status, condition, isNegotiable, category, city, state, country, latitude, longitude, imageUrl, views },
     });
 
     return res
@@ -69,6 +81,11 @@ export const createProduct = async (req: AuthenticatedRequest, res: Response, ne
 
 export const deleteProduct = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
+
+    if (!req.user) {
+      return next(new ApiError(401, 'Unauthorized'));
+    }
+
     const { productId } = req.body ?? {};
     if (!productId) {
       return next(new ApiError(400, 'Product ID is required'));
@@ -88,14 +105,19 @@ export const deleteProduct = async (req: AuthenticatedRequest, res: Response, ne
 
 export const updateProduct = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const { productId, name, description, price } = req.body ?? {};
-    if (!productId || !name || !description || price == null) {
-      return next(new ApiError(400, 'Product ID, name, description, and price are required'));
+
+    if (!req.user) {
+      return next(new ApiError(401, 'Unauthorized'));
+    }
+
+    const { productId, title, description, price } = req.body ?? {};
+    if (!productId || !title || !description || price == null) {
+      return next(new ApiError(400, 'Product ID, title, description, and price are required'));
     }
 
     const product = await prisma.product.update({
       where: { id: productId },
-      data: { name, description, price },
+      data: { title, description, price },
     });
 
     return res

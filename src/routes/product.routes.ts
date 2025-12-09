@@ -9,9 +9,9 @@ const router = Router();
 
 router.get('/list', authMiddleware, listProductsByFilter);
 
-router.post('/create', authMiddleware, adminMiddleware, createProduct);
-router.post('/delete', authMiddleware, adminMiddleware, deleteProduct);
-router.post('/update', authMiddleware, adminMiddleware, updateProduct);
+router.post('/create', authMiddleware, createProduct);
+router.post('/delete', authMiddleware, deleteProduct);
+router.post('/update', authMiddleware, updateProduct);
 
 export default router;
 

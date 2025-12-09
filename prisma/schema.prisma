@@ -7,78 +7,129 @@ datasource db {
   provider = "postgresql"
 }
 
-model User {
-  id           String      @id @default(uuid())
-  email        String      @unique
-  passwordHash String
-  role         String      @default("user")
-  refreshToken String?
-  createdAt    DateTime    @default(now())
+enum ProductStatus {
+  AVAILABLE
+  PENDING // e.g. interested / hold
+  SOLD
+  ARCHIVED
+}
 
-  cartItems    CartItem[]
-  orders       Order[]
+enum Condition {
+  NEW
+  LIKE_NEW
+  USED
+  FOR_PARTS
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String
+  role          String   @default("user")
+  refreshToken  String?
+  name          String?
+  phoneNumber   String?
+  bio           String?
+  isVerified    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  // relations
+  cartItems     CartItem[]
+  orders        Order[]
   reviews       Review[]
   wishlistItems WishlistItem[]
+
+  // marketplace relations
+  products            Product[]      @relation("SellerProducts")
+  buyerConversations  Conversation[] @relation("BuyerConversations")
+  sellerConversations Conversation[] @relation("SellerConversations")
+  messages            Message[]      @relation("UserMessages")
+  reports             Report[]       @relation("UserReports")
 }
 
 model Product {
-  id          String      @id @default(uuid())
-  name        String
-  description String?
-  price       Decimal      @db.Decimal(10, 2)
-  stock       Int          @default(0)
-  category    String?      @default("Other")
-  imageUrl    String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id       String @id @default(uuid())
+  seller   User   @relation("SellerProducts", fields: [sellerId], references: [id])
+  sellerId String
 
-  cartItems   CartItem[]
-  orderItems  OrderItem[]
+  title         String
+  description   String?
+  price         Decimal       @db.Decimal(10, 2)
+  stock         Int?          @default(1) // optional; OLX-style usually 1 item
+  status        ProductStatus @default(AVAILABLE)
+  condition     Condition?
+  isNegotiable  Boolean       @default(false)
+  category      String?
+  city          String? // location details
+  state         String?
+  country       String?
+  latitude      Float?
+  longitude     Float?
+  imageUrl      String? // primary image (deprecated if using ProductImage)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  views         Int           @default(0)
+
+  // relations
+  images        ProductImage[]
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
   reviews       Review[]
   wishlistItems WishlistItem[]
+  conversations Conversation[] // conversations about this product
+  reports       Report[]
+}
 
+model ProductImage {
+  id        String   @id @default(uuid())
+  product   Product  @relation(fields: [productId], references: [id])
+  productId String
+  url       String
+  altText   String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
 }
 
 model CartItem {
-  id        String   @id @default(uuid())
-  user      User     @relation(fields: [userId], references: [id])
+  id        String  @id @default(uuid())
+  user      User    @relation(fields: [userId], references: [id])
   userId    String
-  product   Product  @relation(fields: [productId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
   productId String
-  quantity  Int      @default(1)
+  quantity  Int     @default(1)
 
   @@unique([userId, productId]) // one row per product per user
 }
 
 model Order {
-  id           String      @id @default(uuid())
-  user         User        @relation(fields: [userId], references: [id])
+  id           String   @id @default(uuid())
+  user         User     @relation(fields: [userId], references: [id])
   userId       String
-  status       String      @default("pending")
-  totalAmount  Decimal     @db.Decimal(10, 2)
+  status       String   @default("pending")
+  totalAmount  Decimal  @db.Decimal(10, 2)
   shippingAddr String?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  items        OrderItem[]
+  items OrderItem[]
 }
 
 model OrderItem {
-  id              String   @id @default(uuid())
-  order           Order    @relation(fields: [orderId], references: [id])
+  id              String  @id @default(uuid())
+  order           Order   @relation(fields: [orderId], references: [id])
   orderId         String
-  product         Product  @relation(fields: [productId], references: [id])
+  product         Product @relation(fields: [productId], references: [id])
   productId       String
   productName     String
-  priceAtPurchase Decimal  @db.Decimal(10, 2)
+  priceAtPurchase Decimal @db.Decimal(10, 2)
   quantity        Int
 }
 
 model Review {
-  id        String   @id @default(uuid())
-  user      User     @relation(fields: [userId], references: [id])
+  id        String  @id @default(uuid())
+  user      User    @relation(fields: [userId], references: [id])
   userId    String
-  product   Product  @relation(fields: [productId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
   productId String
 
   rating    Int
@@ -89,13 +140,60 @@ model Review {
 }
 
 model WishlistItem {
-  id        String   @id @default(uuid())
-  user      User     @relation(fields: [userId], references: [id])
+  id        String  @id @default(uuid())
+  user      User    @relation(fields: [userId], references: [id])
   userId    String
-  product   Product  @relation(fields: [productId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
   productId String
 
   createdAt DateTime @default(now())
 
   @@unique([userId, productId])
+}
+
+model Conversation {
+  id String @id @default(uuid())
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  // buyer & seller are nullable, each side stores its FK
+  buyer   User   @relation("BuyerConversations", fields: [buyerId], references: [id])
+  buyerId String
+
+  seller   User   @relation("SellerConversations", fields: [sellerId], references: [id])
+  sellerId String
+
+  createdAt DateTime @default(now())
+
+  messages Message[] // opposite side is Message.sender with the relation name "UserMessages"
+}
+
+model Message {
+  id String @id @default(uuid())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversationId String
+
+  sender   User   @relation("UserMessages", fields: [senderId], references: [id])
+  senderId String
+
+  content   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Report {
+  id String @id @default(uuid())
+
+  reporter   User   @relation("UserReports", fields: [reporterId], references: [id])
+  reporterId String
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  reason    String
+  details   String?
+  resolved  Boolean  @default(false)
+  createdAt DateTime @default(now())
 }

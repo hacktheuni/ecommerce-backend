@@ -84,15 +84,8 @@ export const loginUser = async (req: Request, res: Response, next: NextFunction)
 
     const { accessToken, refreshToken } = await generateAccessAndRefereshTokens(user.id)
 
-    const options = {
-        httpOnly: true,
-        secure: true
-    }
-
     return res
       .status(200)
-      .cookie('accessToken', accessToken, options)
-      .cookie('refreshToken', refreshToken, options)
       .json(new ApiResponse(200, { user: sanitizeUser(user), accessToken, refreshToken }, 'Logged in successfully'));
   } catch (error) {
     return next(new ApiError(500, 'Unable to login', [], String(error)));
@@ -109,12 +102,7 @@ export const logoutUser = async (_req: AuthenticatedRequest, res: Response) => {
     })
   }
 
-  const options = {
-        httpOnly: true,
-        secure: true
-    }
-
-  return res.status(200).clearCookie('accessToken', options).clearCookie('refreshToken', options).json(new ApiResponse(200, null, 'Logged out successfully'));
+  return res.status(200).json(new ApiResponse(200, null, 'Logged out successfully'));
 };
 
 export const changePassword = async (
@@ -157,3 +145,123 @@ export const changePassword = async (
 };
 
 
+export const getUserProfile = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    if (!req.user) {
+      return next(new ApiError(401, 'Unauthorized'));
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user) {
+      return next(new ApiError(404, 'User not found'));
+    }
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, { user: sanitizeUser(user) }, 'User profile fetched'));
+  } catch (error) {
+    return next(new ApiError(500, 'Unable to fetch user profile', [], String(error)));
+  }
+};
+
+export const updateProfile = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    if (!req.user) {
+      return next(new ApiError(401, 'Unauthorized'));
+    }
+
+    const { name, phoneNumber, bio } = req.body ?? {};
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user) {
+      return next(new ApiError(404, 'User not found'));
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: { name, phoneNumber, bio },
+    });
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, { user: sanitizeUser(updatedUser) }, 'Profile updated'));
+  } catch (error) {
+    return next(new ApiError(500, 'Unable to update profile', [], String(error)));
+  }
+};
+
+export const regenerateAccessToken = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { refreshToken } = req.body ?? {};
+        if (!refreshToken) {
+            return next(new ApiError(400, 'Refresh token is required'));
+        }
+
+        const user = await prisma.user.findFirst({ where: { refreshToken } });
+        if (!user) {
+            return next(new ApiError(401, 'Invalid refresh token'));
+        }
+
+        const { accessToken, refreshToken: newRefreshToken } = await generateAccessAndRefereshTokens(user.id)
+
+        return res
+            .status(200)
+            .json(new ApiResponse(200, { accessToken, "refreshToken": newRefreshToken }, 'Access token regenerated successfully'));
+    } catch (error) {
+        return next(new ApiError(500, 'Unable to regenerate access token', [], String(error)));
+    }
+};
+
+
+export const sendEmailForVerification = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    if (!req.user) {
+      return next(new ApiError(401, 'Unauthorized'));
+    }
+
+    // Logic to send verification email goes here
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, null, 'Verification email sent'));
+  } catch (error) {
+    return next(new ApiError(500, 'Unable to send verification email', [], String(error)));
+  }
+};
+
+export const verifyEmail = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    if (!req.user) {
+      return next(new ApiError(401, 'Unauthorized'));
+    }
+
+    const { verificationCode } = req.body ?? {};
+    if (!verificationCode) {
+      return next(new ApiError(400, 'Verification code is required'));
+    }
+
+    // Logic to verify the email using the verification code goes here
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, null, 'Email verified successfully'));
+  } catch (error) {
+    return next(new ApiError(500, 'Unable to verify email', [], String(error)));
+  }
+};
