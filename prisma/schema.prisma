@@ -1,0 +1,101 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String      @id @default(uuid())
+  email        String      @unique
+  passwordHash String
+  role         String      @default("user")
+  refreshToken String?
+  createdAt    DateTime    @default(now())
+
+  cartItems    CartItem[]
+  orders       Order[]
+  reviews       Review[]
+  wishlistItems WishlistItem[]
+}
+
+model Product {
+  id          String      @id @default(uuid())
+  name        String
+  description String?
+  price       Decimal      @db.Decimal(10, 2)
+  stock       Int          @default(0)
+  category    String?      @default("Other")
+  imageUrl    String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  cartItems   CartItem[]
+  orderItems  OrderItem[]
+  reviews       Review[]
+  wishlistItems WishlistItem[]
+
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  product   Product  @relation(fields: [productId], references: [id])
+  productId String
+  quantity  Int      @default(1)
+
+  @@unique([userId, productId]) // one row per product per user
+}
+
+model Order {
+  id           String      @id @default(uuid())
+  user         User        @relation(fields: [userId], references: [id])
+  userId       String
+  status       String      @default("pending")
+  totalAmount  Decimal     @db.Decimal(10, 2)
+  shippingAddr String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  items        OrderItem[]
+}
+
+model OrderItem {
+  id              String   @id @default(uuid())
+  order           Order    @relation(fields: [orderId], references: [id])
+  orderId         String
+  product         Product  @relation(fields: [productId], references: [id])
+  productId       String
+  productName     String
+  priceAtPurchase Decimal  @db.Decimal(10, 2)
+  quantity        Int
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  product   Product  @relation(fields: [productId], references: [id])
+  productId String
+
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+}
+
+model WishlistItem {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  product   Product  @relation(fields: [productId], references: [id])
+  productId String
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+}
