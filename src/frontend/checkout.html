@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Stripe Checkout Test</title>
+  <script src="https://js.stripe.com/v3/"></script>
+</head>
+<body>
+
+<div style="max-width:600px;margin:20px;padding:16px;border:1px solid #ddd;border-radius:6px;">
+  <h3>Checkout Demo</h3>
+
+  <div style="margin-bottom:8px;">
+    <label>Product ID: <input id="productId" placeholder="product-id-here" style="width:60%"/></label>
+  </div>
+  <div style="margin-bottom:8px;">
+    <label>Quantity: <input id="quantity" type="number" value="1" min="1" style="width:60px"/></label>
+  </div>
+  <div style="margin-bottom:8px;">
+    <button id="addBtn">Add to Cart</button>
+    <button id="createOrderBtn">Create Order from Cart</button>
+    <button id="payBtn">Pay Now</button>
+  </div>
+
+  <div style="margin-bottom:8px;">Created Order ID: <strong id="orderId">(none)</strong></div>
+  <pre id="log" style="height:140px;overflow:auto;background:#f7f7f7;padding:8px;border-radius:4px;font-size:13px"></pre>
+</div>
+
+<script>
+  // Replace with your Stripe publishable key
+  const stripe = Stripe("pk_test_51ScfAvE4356wMB0pKzWlrh0IOKFxL0YWVdAsQ2IMzhd8Hu6LhClNauuVr6dmAY0AFzvOuutzt4v3wQ8Qak09Fk75004CldRKpB");
+
+  // Demo auth token copied from original file. Replace with a valid token when testing.
+  const AUTH_TOKEN = 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Ijc3NWIxODJiLTc2NjUtNGQwZC1iZDUyLTZmNTA1YjRmOTNkYyIsImVtYWlsIjoidGVzdEBnbWFpbC5jb20iLCJyb2xlIjoidXNlciIsImlhdCI6MTc2NTM0NzkzMywiZXhwIjoxNzY1NDM0MzMzfQ.XylXEDXJTuCHngE1Pw3n0HX_3Sk_WZE5qnbojuH5rwg';
+
+  const addBtn = document.getElementById('addBtn');
+  const createOrderBtn = document.getElementById('createOrderBtn');
+  const payBtn = document.getElementById('payBtn');
+  const productIdInput = document.getElementById('productId');
+  const quantityInput = document.getElementById('quantity');
+  const logPre = document.getElementById('log');
+  const orderIdSpan = document.getElementById('orderId');
+
+  function log(...args) {
+    console.log(...args);
+    logPre.textContent += args.map(a => (typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a))).join(' ') + '\n';
+    logPre.scrollTop = logPre.scrollHeight;
+  }
+
+  // Add product to cart
+  addBtn.addEventListener('click', async () => {
+    const productId = productIdInput.value.trim();
+    const quantity = Number(quantityInput.value) || 1;
+    if (!productId) {
+      alert('Please enter a product id');
+      return;
+    }
+
+    try {
+      const res = await fetch('http://localhost:3000/api/cart/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': AUTH_TOKEN },
+        body: JSON.stringify({ productId, quantity })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        log('Add to cart failed:', data);
+        alert(data?.message || 'Failed to add to cart');
+        return;
+      }
+
+      log('Added to cart:', data.data.item);
+      // alert('Added to cart');
+    } catch (err) {
+      log('Add to cart error:', err);
+      alert('Network error adding to cart');
+    }
+  });
+
+  // Create order from cart
+  createOrderBtn.addEventListener('click', async () => {
+    try {
+      const res = await fetch('http://localhost:3000/api/order/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': AUTH_TOKEN },
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        log('Create order failed:', data);
+        alert(data?.message || 'Failed to create order');
+        return;
+      }
+
+      const order = data.data.order;
+      log('Order created:', order);
+      orderIdSpan.textContent = order.id;
+      // alert('Order created. You can now click Pay Now.');
+    } catch (err) {
+      log('Create order error:', err);
+      alert('Network error creating order');
+    }
+  });
+
+  // Pay (create checkout session and redirect)
+  payBtn.addEventListener('click', async () => {
+    const orderId = orderIdSpan.textContent || null;
+    if (!orderId || orderId === '(none)') {
+      alert('Please create an order first');
+      return;
+    }
+
+    try {
+      const res = await fetch('http://localhost:3000/api/payment/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': AUTH_TOKEN },
+        body: JSON.stringify({ orderId })
+      });
+
+      const data = await res.json();
+      log('Checkout session response:', data);
+
+      const sessionId = data?.data?.sessionId;
+      if (!sessionId) {
+        alert('Failed to create checkout session');
+        return;
+      }
+
+      const result = await stripe.redirectToCheckout({ sessionId });
+      if (result.error) {
+        alert(result.error.message);
+      }
+    } catch (err) {
+      log('Checkout error:', err);
+      alert('Network error creating checkout session');
+    }
+  });
+</script>
+
+</body>
+</html>

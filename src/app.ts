@@ -9,12 +9,17 @@ import reviewRoutes from './routes/review.routes.ts';
 import wishlistRoutes from './routes/wishlist.routes.ts';
 import conversationRoutes from './routes/conversation.routes.ts';
 import reportRoutes from './routes/report.routes.ts';
+import paymentRoutes from './routes/payment.routes.ts';
 import { ApiError } from './utils/ApiError.ts';
 
 const app = express();
 
 app.use(cors());
 app.use(morgan('dev'));
+
+// Stripe webhook needs raw body, so register it BEFORE the JSON parser
+app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -30,6 +35,7 @@ app.use('/api/review', reviewRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/conversation', conversationRoutes);
 app.use('/api/report', reportRoutes);
+app.use('/api/payment', paymentRoutes);
 
 // Global error handler
 app.use(

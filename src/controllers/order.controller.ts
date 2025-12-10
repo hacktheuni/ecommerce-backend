@@ -6,6 +6,7 @@ import { ApiResponse } from '../utils/ApiResponse.ts';
 import { generateAccessToken, generateRefreshToken } from '../utils/auth.ts';
 import type { AuthenticatedRequest } from '../middlewares/auth.middleware.ts';
 import type { Decimal } from '@prisma/client/runtime/client';
+import { v4 as uuid } from 'uuid';
 
 
 export const getMyOrders = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -74,10 +75,13 @@ export const createOrderFromCart = async (req: AuthenticatedRequest, res: Respon
       return sum + (Number(item.product.price) * item.quantity);
     }, 0);
 
+    const idempotencyKey = uuid();
     const order = await prisma.order.create({
       data: {
         userId: req.user.id,
         totalAmount,
+        idempotencyKey,
+        status: 'PENDING',
         items: {
           create: cartItems.map(item => ({
             productId: item.productId,

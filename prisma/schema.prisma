@@ -21,17 +21,24 @@ enum Condition {
   FOR_PARTS
 }
 
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
 model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
-  passwordHash  String
-  role          String   @default("user")
-  refreshToken  String?
-  name          String?
-  phoneNumber   String?
-  bio           String?
-  isVerified    Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         String   @default("user")
+  refreshToken String?
+  name         String?
+  phoneNumber  String?
+  bio          String?
+  isVerified   Boolean  @default(false)
+  createdAt    DateTime @default(now())
 
   // relations
   cartItems     CartItem[]
@@ -45,6 +52,7 @@ model User {
   sellerConversations Conversation[] @relation("SellerConversations")
   messages            Message[]      @relation("UserMessages")
   reports             Report[]       @relation("UserReports")
+  payments            Payment[]
 }
 
 model Product {
@@ -52,23 +60,23 @@ model Product {
   seller   User   @relation("SellerProducts", fields: [sellerId], references: [id])
   sellerId String
 
-  title         String
-  description   String?
-  price         Decimal       @db.Decimal(10, 2)
-  stock         Int?          @default(1) // optional; OLX-style usually 1 item
-  status        ProductStatus @default(AVAILABLE)
-  condition     Condition?
-  isNegotiable  Boolean       @default(false)
-  category      String?
-  city          String? // location details
-  state         String?
-  country       String?
-  latitude      Float?
-  longitude     Float?
-  imageUrl      String? // primary image (deprecated if using ProductImage)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  views         Int           @default(0)
+  title        String
+  description  String?
+  price        Decimal       @db.Decimal(10, 2)
+  stock        Int?          @default(1) // optional; OLX-style usually 1 item
+  status       ProductStatus @default(AVAILABLE)
+  condition    Condition?
+  isNegotiable Boolean       @default(false)
+  category     String?
+  city         String? // location details
+  state        String?
+  country      String?
+  latitude     Float?
+  longitude    Float?
+  imageUrl     String? // primary image (deprecated if using ProductImage)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  views        Int           @default(0)
 
   // relations
   images        ProductImage[]
@@ -102,16 +110,22 @@ model CartItem {
 }
 
 model Order {
-  id           String   @id @default(uuid())
-  user         User     @relation(fields: [userId], references: [id])
-  userId       String
-  status       String   @default("pending")
-  totalAmount  Decimal  @db.Decimal(10, 2)
-  shippingAddr String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                    String        @id @default(uuid())
+  user                  User          @relation(fields: [userId], references: [id])
+  userId                String
+  status                String        @default("pending")
+  totalAmount           Decimal       @db.Decimal(10, 2)
+  shippingAddr          String?
+  paymentStatus         PaymentStatus @default(PENDING)
+  stripeSessionId       String?       @unique
+  stripePaymentIntentId String?       @unique
+  idempotencyKey        String        @unique
+  paidAt                DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 
-  items OrderItem[]
+  items    OrderItem[]
+  payments Payment[]
 }
 
 model OrderItem {
@@ -198,4 +212,36 @@ model Report {
   createdAt DateTime @default(now())
 }
 
+model Payment {
+  id                    String        @id @default(uuid())
+  user                  User?         @relation(fields: [userId], references: [id])
+  userId                String?
+  order                 Order?        @relation(fields: [orderId], references: [id])
+  orderId               String?
+  amount                Decimal       @db.Decimal(10, 2) // amount in major currency unit (e.g., 49.99)
+  currency              String        @default("USD") // store currency per-payment
+  status                PaymentStatus @default(PENDING)
+  stripePaymentIntentId String?       @unique
+  stripeChargeId        String?       @unique
+  paymentMethod         String? // optional: e.g., "card", "alipay"
+  description           String? // free-form note
+  metadata              Json? // store any Stripe response or metadata
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 
+  refunds Refund[] // relations - refunds linked to this payment
+}
+
+model Refund {
+  id             String   @id @default(uuid())
+  payment        Payment  @relation(fields: [paymentId], references: [id])
+  paymentId      String
+  amount         Decimal  @db.Decimal(10, 2)
+  currency       String   @default("USD")
+  reason         String? // e.g., "requested_by_customer", "fraudulent", custom
+  stripeRefundId String?  @unique
+  status         String   @default("pending") // or create an enum if you prefer
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
