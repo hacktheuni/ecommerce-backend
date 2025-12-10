@@ -8,6 +8,7 @@ import orderRoutes from './routes/order.routes.ts';
 import reviewRoutes from './routes/review.routes.ts';
 import wishlistRoutes from './routes/wishlist.routes.ts';
 import conversationRoutes from './routes/conversation.routes.ts';
+import reportRoutes from './routes/report.routes.ts';
 import { ApiError } from './utils/ApiError.ts';
 
 const app = express();
@@ -28,6 +29,7 @@ app.use('/api/order', orderRoutes);
 app.use('/api/review', reviewRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/conversation', conversationRoutes);
+app.use('/api/report', reportRoutes);
 
 // Global error handler
 app.use(
