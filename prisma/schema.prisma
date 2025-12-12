@@ -60,20 +60,17 @@ model Product {
   seller   User   @relation("SellerProducts", fields: [sellerId], references: [id])
   sellerId String
 
-  title        String
+  title        String        @unique
   description  String?
   price        Decimal       @db.Decimal(10, 2)
-  stock        Int?          @default(1) // optional; OLX-style usually 1 item
+  stock        Int?          @default(1)
   status       ProductStatus @default(AVAILABLE)
   condition    Condition?
   isNegotiable Boolean       @default(false)
   category     String?
-  city         String? // location details
+  city         String? 
   state        String?
-  country      String?
-  latitude     Float?
-  longitude    Float?
-  imageUrl     String? // primary image (deprecated if using ProductImage)
+  country      String? 
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   views        Int           @default(0)
@@ -93,6 +90,7 @@ model ProductImage {
   product   Product  @relation(fields: [productId], references: [id])
   productId String
   url       String
+  path      String
   altText   String?
   order     Int      @default(0)
   createdAt DateTime @default(now())

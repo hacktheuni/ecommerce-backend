@@ -13,56 +13,56 @@ import { config } from '../config/config.ts';
 const stripe = new Stripe(config.stripeSecretKey!, { apiVersion: '2025-11-17.clover' });
 
 export const createCheckoutSession = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const { orderId } = req.body;
-        if (!orderId || typeof orderId !== 'string') {
-            return next(new ApiError(400, 'Order ID is required'));
-        }
-
-        const order = await prisma.order.findUnique({
-            where: { id: orderId },
-            include: { items: { include: { product: true } } },
-        });
-
-        if (!order) {
-            return next(new ApiError(404, 'Order not found'));
-        }
-
-
-        const session = await stripe.checkout.sessions.create({
-            payment_method_types: ['card'],
-            mode: 'payment',
-            line_items: order.items.map(item => ({
-                price_data: {
-                    currency: 'usd',
-                    product_data: {
-                        name: item.product.title,
-                        description: item.product.description as string,
-                    },
-                    unit_amount: Math.round(Number(item.product.price) * 100),
-                },
-                quantity: item.quantity,
-            })),
-            success_url: `http://localhost:3000/api/payment/webhook`,
-            cancel_url: `https://your-site.com/cart`,
-            metadata: {
-                orderId: String(order.id)
-            }
-        }, {
-            idempotencyKey: order.idempotencyKey
-        });
-
-        await prisma.order.update({
-            where: { id: order.id },
-            data: { stripeSessionId: session.id }
-        });
-
-        return res
-            .status(200)
-            .json(new ApiResponse(200, { sessionId: session.id }, 'Checkout session created'));
-    } catch (error) {
-        return next(new ApiError(500, 'Unable to create checkout session', [], String(error)));
+  try {
+    const { orderId } = req.body;
+    if (!orderId || typeof orderId !== 'string') {
+      return next(new ApiError(400, 'Order ID is required'));
     }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: { include: { product: true } } },
+    });
+
+    if (!order) {
+      return next(new ApiError(404, 'Order not found'));
+    }
+
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'payment',
+      line_items: order.items.map(item => ({
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: item.product.title,
+            description: item.product.description as string,
+          },
+          unit_amount: Math.round(Number(item.product.price) * 100),
+        },
+        quantity: item.quantity,
+      })),
+      success_url: `http://localhost:3000/api/payment/webhook`,
+      cancel_url: `https://your-site.com/cart`,
+      metadata: {
+        orderId: String(order.id)
+      }
+    }, {
+      idempotencyKey: order.idempotencyKey
+    });
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { stripeSessionId: session.id }
+    });
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, { sessionId: session.id }, 'Checkout session created'));
+  } catch (error) {
+    return next(new ApiError(500, 'Unable to create checkout session', [], String(error)));
+  }
 };
 
 export const paymentWebhookHandler = async (req: Request, res: Response, next: NextFunction) => {
@@ -81,7 +81,7 @@ export const paymentWebhookHandler = async (req: Request, res: Response, next: N
   } catch (err: any) {
     return next(new ApiError(400, 'Webhook signature verification failed', [], String(err?.message ?? err)));
   }
-
+  console.log("Webhook type:", event.type);
   try {
     switch (event.type) {
       case 'checkout.session.completed': {
@@ -205,7 +205,7 @@ export const paymentWebhookHandler = async (req: Request, res: Response, next: N
         // ignore other events
         break;
     }
-        
+
     return res.status(200).json(new ApiResponse(200, { received: true }, 'Webhook processed'));
   } catch (err: any) {
     return next(new ApiError(500, 'Error processing webhook event', [], String(err?.message ?? err)));

@@ -16,6 +16,7 @@ const app = express();
 
 app.use(cors());
 app.use(morgan('dev'));
+app.use(express.static("public"));
 
 // Stripe webhook needs raw body, so register it BEFORE the JSON parser
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
