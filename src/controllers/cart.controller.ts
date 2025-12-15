@@ -19,7 +19,7 @@ export const listItemsAndTotal = async (req: AuthenticatedRequest, res: Response
     });
 
     const sanitizedItems = cartItems.map(sanitizeCartItem);
-    const totalPrice = sanitizedItems.reduce((total, item) => total + (item.product.price.toNumber() * item.quantity), 0);
+    const totalPrice = sanitizedItems.reduce((total: number, item: any) => total + (item.product.price.toNumber() * item.quantity), 0);
 
     return res
       .status(200)

@@ -3,8 +3,6 @@ import { prisma } from '../db/prisma';
 import { ApiError } from '../utils/ApiError';
 import { ApiResponse } from '../utils/ApiResponse';
 import type { AuthenticatedRequest } from '../middlewares/auth.middleware';
-import type { Decimal } from '@prisma/client/runtime/client';
-import type { Condition, ProductStatus } from '../generated/prisma/client/client';
 
 import path from 'path';
 import crypto from 'crypto';
@@ -183,7 +181,7 @@ export const deleteProduct = async (req: AuthenticatedRequest, res: Response, ne
 
     // delete associated product productImages from storage 
     const productImages = await prisma.productImage.findMany({ where: { productId } });
-    const pathsToDelete: string[] = productImages.map(img => {
+    const pathsToDelete: string[] = productImages.map((img: any) => {
       if (img.path) return img.path;
       return '';
     }).filter(Boolean);
@@ -258,7 +256,7 @@ export const updateProductDetails = async (req: AuthenticatedRequest, res: Respo
 
     // Now update DB inside transaction: update product and if replacing images, delete old rows and insert new ones
     try {
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: any) => {
         await tx.product.update({
           where: { id: productId },
           data: {
@@ -430,8 +428,8 @@ export const deleteProductImages = async (req: AuthenticatedRequest, res: Respon
     if (existing.sellerId !== req.user.id && req.user.role !== 'admin') return next(new ApiError(403, 'Forbidden'));
 
     // Find images to delete
-    const imagesToDelete = existing.images.filter(img => imageIds.includes(img.id));
-    const pathsToDelete: string[] = imagesToDelete.map(img => {
+    const imagesToDelete = existing.images.filter((img: any) => imageIds.includes(img.id));
+    const pathsToDelete: string[] = imagesToDelete.map((img: any) => {
       if ((img as any).path) return (img as any).path;
       return '';
     }).filter(Boolean);
