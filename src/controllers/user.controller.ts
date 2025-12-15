@@ -1,39 +1,35 @@
 import type { NextFunction, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { prisma } from '../db/prisma.ts';
-import { ApiError } from '../utils/ApiError.ts';
-import { ApiResponse } from '../utils/ApiResponse.ts';
-import { generateAccessToken, generateRefreshToken } from '../utils/auth.ts';
-import type { AuthenticatedRequest } from '../middlewares/auth.middleware.ts';
-
-const sanitizeUser = (user: { id: string; email: string; role: string; createdAt: Date }) => ({
-  id: user.id,
-  email: user.email,
-  role: user.role,
-  createdAt: user.createdAt,
-});
-
-const generateAccessAndRefereshTokens = async (userId: string) => {
-    try {
-        const user = await prisma.user.findUnique({ where: { id: userId } }) as {
-            id: string;
-            email: string;
-            role: string;
-        }
-        const accessToken = generateAccessToken({ id: user.id, email: user.email, role: user.role })
-        const refreshToken = generateRefreshToken({ id: user.id })
-
-        await prisma.user.update({
-            where: { id: user.id },
-            data: { refreshToken }
-        })
-
-        return { accessToken, refreshToken }
+import { prisma } from '../db/prisma';
+import { ApiError } from '../utils/ApiError';
+import { ApiResponse } from '../utils/ApiResponse';
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/auth';
+import type { AuthenticatedRequest } from '../middlewares/auth.middleware';
+import { sanitizeUser } from '../utils/sanitizers';
 
 
-    } catch (error) {
-        throw new ApiError(500, "Something went wrong while generating referesh and access token")
+
+const generateAccessAndRefreshTokens = async (userId: string) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId } }) as {
+      id: string;
+      email: string;
+      role: string;
     }
+    const accessToken = generateAccessToken({ id: user.id, email: user.email, role: user.role })
+    const refreshToken = generateRefreshToken({ id: user.id })
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken }
+    })
+
+    return { accessToken, refreshToken }
+
+
+  } catch (error) {
+    throw new ApiError(500, "Something went wrong while generating referesh and access token")
+  }
 }
 
 export const registerUser = async (req: Request, res: Response, next: NextFunction) => {
@@ -64,7 +60,7 @@ export const registerUser = async (req: Request, res: Response, next: NextFuncti
 };
 
 
- 
+
 export const loginUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { email, password } = req.body ?? {};
@@ -82,7 +78,7 @@ export const loginUser = async (req: Request, res: Response, next: NextFunction)
       return next(new ApiError(401, 'Invalid credentials'));
     }
 
-    const { accessToken, refreshToken } = await generateAccessAndRefereshTokens(user.id)
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user.id)
 
     return res
       .status(200)
@@ -199,25 +195,34 @@ export const updateProfile = async (
 };
 
 export const regenerateAccessToken = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const { refreshToken } = req.body ?? {};
-        if (!refreshToken) {
-            return next(new ApiError(400, 'Refresh token is required'));
-        }
-
-        const user = await prisma.user.findFirst({ where: { refreshToken } });
-        if (!user) {
-            return next(new ApiError(401, 'Invalid refresh token'));
-        }
-
-        const { accessToken, refreshToken: newRefreshToken } = await generateAccessAndRefereshTokens(user.id)
-
-        return res
-            .status(200)
-            .json(new ApiResponse(200, { accessToken, "refreshToken": newRefreshToken }, 'Access token regenerated successfully'));
-    } catch (error) {
-        return next(new ApiError(500, 'Unable to regenerate access token', [], String(error)));
+  try {
+    const { refreshToken } = req.body ?? {};
+    if (!refreshToken) {
+      return next(new ApiError(400, 'Refresh token is required'));
     }
+
+    // Verify the refresh token with JWT
+    let decoded;
+    try {
+      decoded = verifyRefreshToken(refreshToken);
+    } catch (err) {
+      return next(new ApiError(401, 'Invalid or expired refresh token'));
+    }
+
+    // Find user by refresh token and verify it matches
+    const user = await prisma.user.findFirst({ where: { id: decoded.id, refreshToken } });
+    if (!user) {
+      return next(new ApiError(401, 'Invalid refresh token'));
+    }
+
+    const { accessToken, refreshToken: newRefreshToken } = await generateAccessAndRefreshTokens(user.id)
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, { accessToken, "refreshToken": newRefreshToken }, 'Access token regenerated successfully'));
+  } catch (error) {
+    return next(new ApiError(500, 'Unable to regenerate access token', [], String(error)));
+  }
 };
 
 

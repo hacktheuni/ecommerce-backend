@@ -1,11 +1,8 @@
 import type { NextFunction, Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
-import { prisma } from '../db/prisma.ts';
-import { ApiError } from '../utils/ApiError.ts';
-import { ApiResponse } from '../utils/ApiResponse.ts';
-import { generateAccessToken, generateRefreshToken } from '../utils/auth.ts';
-import type { AuthenticatedRequest } from '../middlewares/auth.middleware.ts';
-import type { Decimal } from '@prisma/client/runtime/client';
+import { prisma } from '../db/prisma';
+import { ApiError } from '../utils/ApiError';
+import { ApiResponse } from '../utils/ApiResponse';
+import type { AuthenticatedRequest } from '../middlewares/auth.middleware';
 
 export const getMyWishlistProducts = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
@@ -37,6 +34,12 @@ export const addProductToWishlist = async (req: AuthenticatedRequest, res: Respo
       return next(new ApiError(400, 'Product ID is required'));
     }
 
+    // Check if product exists
+    const product = await prisma.product.findUnique({ where: { id: productId } });
+    if (!product) {
+      return next(new ApiError(404, 'Product not found'));
+    }
+
     const existingItem = await prisma.wishlistItem.findFirst({
       where: { userId: req.user.id, productId },
     });
@@ -54,7 +57,8 @@ export const addProductToWishlist = async (req: AuthenticatedRequest, res: Respo
       .json(new ApiResponse(201, { item: wishlistItem }, 'Product added to wishlist'));
   } catch (error) {
     return next(new ApiError(500, 'Unable to add product to wishlist', [], String(error)));
-  } };
+  }
+};
 
 export const removeProductFromWishlist = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {

@@ -1,6 +1,6 @@
 // src/utils/supabaseClient.ts
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { config } from '../config/config.ts';
+import { config } from '../config/config';
 
 const SUPABASE_URL = config.supabaseUrl!;
 const SUPABASE_KEY = config.supabaseKey!;

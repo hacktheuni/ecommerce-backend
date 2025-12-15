@@ -1,12 +1,11 @@
 import type { NextFunction, Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
-import { prisma } from '../db/prisma.ts';
-import { ApiError } from '../utils/ApiError.ts';
-import { ApiResponse } from '../utils/ApiResponse.ts';
-import { generateAccessToken, generateRefreshToken } from '../utils/auth.ts';
-import type { AuthenticatedRequest } from '../middlewares/auth.middleware.ts';
+import { prisma } from '../db/prisma';
+import { ApiError } from '../utils/ApiError';
+import { ApiResponse } from '../utils/ApiResponse';
+import type { AuthenticatedRequest } from '../middlewares/auth.middleware';
 import type { Decimal } from '@prisma/client/runtime/client';
 import { v4 as uuid } from 'uuid';
+import { getPaginationParams, getSkip, createPaginatedResponse } from '../utils/pagination';
 
 
 export const getMyOrders = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -15,14 +14,30 @@ export const getMyOrders = async (req: AuthenticatedRequest, res: Response, next
       return next(new ApiError(401, 'Unauthorized'));
     }
 
-    const orders = await prisma.order.findMany({
-      where: { userId: req.user.id },
-      include: { items: { include: { product: true } } },
-    });
+    const { page, limit } = getPaginationParams(req.query);
+    const { status } = req.query;
+
+    const filters: any = { userId: req.user.id };
+    if (status) {
+      filters.status = String(status);
+    }
+
+    const [orders, total] = await Promise.all([
+      prisma.order.findMany({
+        where: filters,
+        include: { items: { include: { product: true } } },
+        skip: getSkip(page, limit),
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.order.count({ where: filters }),
+    ]);
+
+    const paginatedResponse = createPaginatedResponse(orders, total, page, limit);
 
     return res
       .status(200)
-      .json(new ApiResponse(200, { orders }, 'Orders retrieved'));
+      .json(new ApiResponse(200, paginatedResponse, 'Orders retrieved'));
   } catch (error) {
     return next(new ApiError(500, 'Unable to retrieve orders', [], String(error)));
   }
@@ -71,31 +86,66 @@ export const createOrderFromCart = async (req: AuthenticatedRequest, res: Respon
       return next(new ApiError(400, 'Cart is empty'));
     }
 
+    // Validate all products before creating order
+    for (const item of cartItems) {
+      // Check product status
+      if (item.product.status !== 'AVAILABLE') {
+        return next(new ApiError(400, `Product "${item.product.title}" is not available for purchase`));
+      }
+
+      // Check stock availability
+      if (item.product.stock !== null && item.product.stock < item.quantity) {
+        return next(new ApiError(400, `Insufficient stock for "${item.product.title}". Only ${item.product.stock} available`));
+      }
+    }
+
     const totalAmount = cartItems.reduce((sum, item) => {
       return sum + (Number(item.product.price) * item.quantity);
     }, 0);
 
     const idempotencyKey = uuid();
-    const order = await prisma.order.create({
-      data: {
-        userId: req.user.id,
-        totalAmount,
-        idempotencyKey,
-        status: 'PENDING',
-        items: {
-          create: cartItems.map(item => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            priceAtPurchase: item.product.price,
-            productName: item.product.title,
-          })),
-        },
-      },
-      include: { items: true },
-    });
 
-    await prisma.cartItem.deleteMany({
-      where: { userId: req.user.id },
+    // Use transaction to ensure atomicity
+    const order = await prisma.$transaction(async (tx) => {
+      // Create order
+      const newOrder = await tx.order.create({
+        data: {
+          userId: req.user!.id,
+          totalAmount,
+          idempotencyKey,
+          status: 'PENDING',
+          items: {
+            create: cartItems.map(item => ({
+              productId: item.productId,
+              quantity: item.quantity,
+              priceAtPurchase: item.product.price,
+              productName: item.product.title,
+            })),
+          },
+        },
+        include: { items: true },
+      });
+
+      // Decrement stock for each product
+      for (const item of cartItems) {
+        if (item.product.stock !== null) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              stock: {
+                decrement: item.quantity,
+              },
+            },
+          });
+        }
+      }
+
+      // Clear cart
+      await tx.cartItem.deleteMany({
+        where: { userId: req.user!.id },
+      });
+
+      return newOrder;
     });
 
     return res
@@ -110,13 +160,30 @@ export const createOrderFromCart = async (req: AuthenticatedRequest, res: Respon
 // Admin controllers
 export const listAllOrders = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const orders = await prisma.order.findMany({
-      include: { items: { include: { product: true } }, user: true },
-    });
+    const { page, limit } = getPaginationParams(req.query);
+    const { status } = req.query;
+
+    const filters: any = {};
+    if (status) {
+      filters.status = String(status);
+    }
+
+    const [orders, total] = await Promise.all([
+      prisma.order.findMany({
+        where: filters,
+        include: { items: { include: { product: true } }, user: true },
+        skip: getSkip(page, limit),
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.order.count({ where: filters }),
+    ]);
+
+    const paginatedResponse = createPaginatedResponse(orders, total, page, limit);
 
     return res
       .status(200)
-      .json(new ApiResponse(200, { orders }, 'All orders retrieved'));
+      .json(new ApiResponse(200, paginatedResponse, 'All orders retrieved'));
   } catch (error) {
     return next(new ApiError(500, 'Unable to retrieve all orders', [], String(error)));
   }

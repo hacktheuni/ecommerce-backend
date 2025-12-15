@@ -1,6 +1,6 @@
-import { app } from './app.ts';
-import { config } from './config/config.ts';
-import { prisma } from './db/prisma.ts';
+import { app } from './app';
+import { config } from './config/config';
+import { prisma } from './db/prisma';
 
 const port = config.port || 8000;
 

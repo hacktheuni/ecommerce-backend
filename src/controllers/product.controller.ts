@@ -1,29 +1,23 @@
 import type { NextFunction, Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
-import { prisma } from '../db/prisma.ts';
-import { ApiError } from '../utils/ApiError.ts';
-import { ApiResponse } from '../utils/ApiResponse.ts';
-import { generateAccessToken, generateRefreshToken } from '../utils/auth.ts';
-import type { AuthenticatedRequest } from '../middlewares/auth.middleware.ts';
+import { prisma } from '../db/prisma';
+import { ApiError } from '../utils/ApiError';
+import { ApiResponse } from '../utils/ApiResponse';
+import type { AuthenticatedRequest } from '../middlewares/auth.middleware';
 import type { Decimal } from '@prisma/client/runtime/client';
-import type { Condition, ProductStatus } from '../generated/prisma/client/client.ts';
+import type { Condition, ProductStatus } from '../generated/prisma/client/client';
 
 import path from 'path';
 import crypto from 'crypto';
-import { uploadFileToSupabase, deleteFilesFromSupabase } from '../utils/supabaseStorage.ts';
+import { uploadFileToSupabase, deleteFilesFromSupabase } from '../utils/supabaseStorage';
+import { getPaginationParams, getSkip, createPaginatedResponse } from '../utils/pagination';
+import { sanitizeProduct } from '../utils/sanitizers';
 
 const BUCKET = 'product-images';
 
-const sanitizeProduct = (product: { id: string; title: string; description: string | null; price: Decimal; }) => ({
-  id: product.id,
-  title: product.title,
-  description: product.description,
-  price: product.price
-});
-
 export const listProductsByFilter = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { category, city, minPrice, maxPrice } = req.query;
+    const { category, city, minPrice, maxPrice, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
+    const { page, limit } = getPaginationParams(req.query);
 
     const filters: any = {};
     if (category) {
@@ -41,15 +35,32 @@ export const listProductsByFilter = async (req: Request, res: Response, next: Ne
       if (!isNaN(max)) filters.price = { ...filters.price, lte: max };
     }
 
-    const products = await prisma.product.findMany({
-      where: filters,
-      include: { images: true },
-    });
+    // Build sort object
+    const orderBy: any = {};
+    const sortField = String(sortBy);
+    if (['createdAt', 'price', 'views'].includes(sortField)) {
+      orderBy[sortField] = sortOrder === 'asc' ? 'asc' : 'desc';
+    } else {
+      orderBy.createdAt = 'desc';
+    }
+
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({
+        where: filters,
+        include: { images: true },
+        orderBy,
+        skip: getSkip(page, limit),
+        take: limit,
+      }),
+      prisma.product.count({ where: filters }),
+    ]);
+
     const sanitizedProducts = products.map(sanitizeProduct);
+    const paginatedResponse = createPaginatedResponse(sanitizedProducts, total, page, limit);
 
     return res
       .status(200)
-      .json(new ApiResponse(200, { products: sanitizedProducts }, 'Filtered products retrieved'));
+      .json(new ApiResponse(200, paginatedResponse, 'Filtered products retrieved'));
   } catch (error) {
     return next(new ApiError(500, 'Unable to retrieve filtered products', [], String(error)));
   }
@@ -313,6 +324,16 @@ export const getProductDetails = async (req: Request, res: Response, next: NextF
       return next(new ApiError(404, 'Product not found'));
     }
 
+    // Increment view counter atomically
+    await prisma.product.update({
+      where: { id: productId },
+      data: {
+        views: {
+          increment: 1,
+        },
+      },
+    });
+
     return res
       .status(200)
       .json(new ApiResponse(200, { product: sanitizeProduct(product) }, 'Product details retrieved'));
@@ -348,7 +369,7 @@ export const addProductImages = async (req: AuthenticatedRequest, res: Response,
     for (let i = 0; i < productImagesFiles.length; i++) {
       const f = productImagesFiles[i];
       const filename = randomFileName(f!.originalname);
-      const objectPath = makeObjectPath(req.user.id, filename); 
+      const objectPath = makeObjectPath(req.user.id, filename);
 
       const { path: uploadedPath, publicUrl } = await uploadFileToSupabase({
         bucket: BUCKET,

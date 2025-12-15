@@ -1,14 +1,10 @@
 import type { NextFunction, Request, Response } from 'express';
-import express from 'express';
-import bcrypt from 'bcryptjs';
-import { prisma } from '../db/prisma.ts';
-import { ApiError } from '../utils/ApiError.ts';
-import { ApiResponse } from '../utils/ApiResponse.ts';
-import { generateAccessToken, generateRefreshToken } from '../utils/auth.ts';
-import type { AuthenticatedRequest } from '../middlewares/auth.middleware.ts';
+import { prisma } from '../db/prisma';
+import { ApiError } from '../utils/ApiError';
+import { ApiResponse } from '../utils/ApiResponse';
 import { Decimal } from '@prisma/client/runtime/client';
 import Stripe from 'stripe';
-import { config } from '../config/config.ts';
+import { config } from '../config/config';
 
 const stripe = new Stripe(config.stripeSecretKey!, { apiVersion: '2025-11-17.clover' });
 

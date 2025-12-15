@@ -3,8 +3,8 @@ import multer from 'multer';
 import {
   createProduct, deleteProduct, updateProductDetails, listProductsByFilter,
   getProductDetails, addProductImages, deleteProductImages
-} from '../controllers/product.controller.ts';
-import { authMiddleware, adminMiddleware } from '../middlewares/auth.middleware.ts';
+} from '../controllers/product.controller';
+import { authMiddleware, adminMiddleware } from '../middlewares/auth.middleware';
 
 const router = Router();
 

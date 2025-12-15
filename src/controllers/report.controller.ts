@@ -1,20 +1,11 @@
 import type { NextFunction, Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
-import { prisma } from '../db/prisma.ts';
-import { ApiError } from '../utils/ApiError.ts';
-import { ApiResponse } from '../utils/ApiResponse.ts';
-import { generateAccessToken, generateRefreshToken } from '../utils/auth.ts';
-import type { AuthenticatedRequest } from '../middlewares/auth.middleware.ts';
-import type { Decimal } from '@prisma/client/runtime/client';
+import { prisma } from '../db/prisma';
+import { ApiError } from '../utils/ApiError';
+import { ApiResponse } from '../utils/ApiResponse';
+import type { AuthenticatedRequest } from '../middlewares/auth.middleware';
+import { sanitizeReport } from '../utils/sanitizers';
 
-const sanitizeReport = (report: { id: string; productId: string; reporterId: string; reason: string; resolved: boolean; createdAt: Date; }) => ({
-    id: report.id,
-    productId: report.productId,
-    reporterId: report.reporterId,
-    reason: report.reason,
-    resolved: report.resolved,
-    createdAt: report.createdAt
-});
+
 
 export const reportListedProduct = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
@@ -22,16 +13,30 @@ export const reportListedProduct = async (req: AuthenticatedRequest, res: Respon
             return next(new ApiError(401, 'Unauthorized'));
         }
 
-        const { productId, reason } = req.body;
+        const { productId, reason, details } = req.body;
         if (!productId || !reason) {
             return next(new ApiError(400, 'Product ID and reason are required'));
+        }
+
+        // Check for duplicate report (same user, same product, unresolved)
+        const existingReport = await prisma.report.findFirst({
+            where: {
+                productId,
+                reporterId: req.user.id,
+                resolved: false
+            }
+        });
+
+        if (existingReport) {
+            return next(new ApiError(400, 'You have already reported this product'));
         }
 
         const report = await prisma.report.create({
             data: {
                 productId,
                 reporterId: req.user.id,
-                reason
+                reason,
+                details
             },
         });
 
@@ -49,7 +54,12 @@ export const getAllReports = async (req: AuthenticatedRequest, res: Response, ne
             return next(new ApiError(401, 'Unauthorized'));
         }
 
-        const reports = await prisma.report.findMany();
+        const reports = await prisma.report.findMany({
+            include: {
+                product: true,
+                reporter: true
+            }
+        });
 
         const sanitizedReports = reports.map(sanitizeReport);
 
@@ -74,6 +84,10 @@ export const getReportById = async (req: AuthenticatedRequest, res: Response, ne
 
         const report = await prisma.report.findUnique({
             where: { id: reportId },
+            include: {
+                product: true,
+                reporter: true
+            }
         });
 
         if (!report) {
@@ -101,7 +115,7 @@ export const resolveReport = async (req: AuthenticatedRequest, res: Response, ne
 
         const updatedReport = await prisma.report.update({
             where: { id: reportId },
-            data: { resolved }, 
+            data: { resolved },
         });
 
         return res

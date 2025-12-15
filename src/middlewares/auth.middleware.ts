@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { config } from '../config/config.ts';
-import { ApiError } from '../utils/ApiError.ts';
+import { config } from '../config/config';
+import { ApiError } from '../utils/ApiError';
 
 export interface AuthenticatedRequest extends Request {
   user?: {

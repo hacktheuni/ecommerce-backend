@@ -1,16 +1,16 @@
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
-import userRoutes from './routes/user.routes.ts';
-import productRoutes from './routes/product.routes.ts';
-import cartRoutes from './routes/cart.routes.ts';
-import orderRoutes from './routes/order.routes.ts';
-import reviewRoutes from './routes/review.routes.ts';
-import wishlistRoutes from './routes/wishlist.routes.ts';
-import conversationRoutes from './routes/conversation.routes.ts';
-import reportRoutes from './routes/report.routes.ts';
-import paymentRoutes from './routes/payment.routes.ts';
-import { ApiError } from './utils/ApiError.ts';
+import userRoutes from './routes/user.routes';
+import productRoutes from './routes/product.routes';
+import cartRoutes from './routes/cart.routes';
+import orderRoutes from './routes/order.routes';
+import reviewRoutes from './routes/review.routes';
+import wishlistRoutes from './routes/wishlist.routes';
+import conversationRoutes from './routes/conversation.routes';
+import reportRoutes from './routes/report.routes';
+import paymentRoutes from './routes/payment.routes';
+import { ApiError } from './utils/ApiError';
 
 const app = express();
 

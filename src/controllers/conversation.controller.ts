@@ -1,18 +1,11 @@
 import type { NextFunction, Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
-import { prisma } from '../db/prisma.ts';
-import { ApiError } from '../utils/ApiError.ts';
-import { ApiResponse } from '../utils/ApiResponse.ts';
-import { generateAccessToken, generateRefreshToken } from '../utils/auth.ts';
-import type { AuthenticatedRequest } from '../middlewares/auth.middleware.ts';
-import type { Decimal } from '@prisma/client/runtime/client';
+import { prisma } from '../db/prisma';
+import { ApiError } from '../utils/ApiError';
+import { ApiResponse } from '../utils/ApiResponse';
+import type { AuthenticatedRequest } from '../middlewares/auth.middleware';
+import { sanitizeConversation } from '../utils/sanitizers';
 
-const sanitizeConversation = (conversation: { id: string; buyerId: string; sellerId: string; createdAt: Date; }) => ({
-    id: conversation.id,
-    buyerId: conversation.buyerId,
-    sellerId: conversation.sellerId,
-    createdAt: conversation.createdAt
-});
+
 
 export const listAllConversations = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
@@ -20,11 +13,21 @@ export const listAllConversations = async (req: AuthenticatedRequest, res: Respo
             return next(new ApiError(401, 'Unauthorized'));
         }
 
+        // Show conversations where user is either buyer or seller
         const conversations = await prisma.conversation.findMany({
-            where:
-            {
-                sellerId: req.user.id
+            where: {
+                OR: [
+                    { sellerId: req.user.id },
+                    { buyerId: req.user.id }
+                ]
             },
+            include: {
+                product: true,
+                messages: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1 // Get last message for preview
+                }
+            }
         });
 
         const sanitizedConversations = conversations.map(sanitizeConversation);
@@ -84,13 +87,18 @@ export const startOrGetConversation = async (req: AuthenticatedRequest, res: Res
 
         const sellerId = product.sellerId;
 
+        // Prevent seller from messaging themselves
+        if (sellerId === req.user.id) {
+            return next(new ApiError(400, 'You cannot start a conversation about your own product'));
+        }
+
         let conversation = await prisma.conversation.findFirst({
             where: {
                 buyerId: req.user.id,
                 sellerId,
                 productId
             },
-            include: {messages: true}
+            include: { messages: true }
         });
 
         if (!conversation) {
@@ -100,7 +108,7 @@ export const startOrGetConversation = async (req: AuthenticatedRequest, res: Res
                     productId,
                     sellerId
                 },
-                include: {messages: true}
+                include: { messages: true }
             });
         }
 
@@ -128,6 +136,11 @@ export const sendMessage = async (req: AuthenticatedRequest, res: Response, next
             return next(new ApiError(404, 'Conversation not found'));
         }
 
+        // Verify user is a participant (either buyer or seller)
+        if (conversation.buyerId !== req.user.id && conversation.sellerId !== req.user.id) {
+            return next(new ApiError(403, 'You are not a participant in this conversation'));
+        }
+
         const message = await prisma.message.create({
             data: {
                 conversationId,
@@ -143,7 +156,3 @@ export const sendMessage = async (req: AuthenticatedRequest, res: Response, next
         return next(new ApiError(500, 'Unable to send message', [], String(error)));
     }
 };
-
-
-
-

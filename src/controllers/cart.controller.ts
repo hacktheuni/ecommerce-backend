@@ -1,23 +1,11 @@
 import type { NextFunction, Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
-import { prisma } from '../db/prisma.ts';
-import { ApiError } from '../utils/ApiError.ts';
-import { ApiResponse } from '../utils/ApiResponse.ts';
-import { generateAccessToken, generateRefreshToken } from '../utils/auth.ts';
-import type { AuthenticatedRequest } from '../middlewares/auth.middleware.ts';
-import type { Decimal } from '@prisma/client/runtime/client';
+import { prisma } from '../db/prisma';
+import { ApiError } from '../utils/ApiError';
+import { ApiResponse } from '../utils/ApiResponse';
+import type { AuthenticatedRequest } from '../middlewares/auth.middleware';
+import { sanitizeCartItem } from '../utils/sanitizers';
 
-const sanitizedCartItem = (item: { id: string; productId: string; quantity: number; product: { id: string; name: string; description: string | null; price: Decimal; } }) => ({
-  id: item.id,
-  productId: item.productId,
-  quantity: item.quantity,
-  product: {
-    id: item.product.id,
-    name: item.product.name,
-    description: item.product.description,
-    price: item.product.price
-  },
-});
+
 
 export const listItemsAndTotal = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
@@ -30,7 +18,7 @@ export const listItemsAndTotal = async (req: AuthenticatedRequest, res: Response
       include: { product: true },
     });
 
-    const sanitizedItems = cartItems.map(sanitizedCartItem);
+    const sanitizedItems = cartItems.map(sanitizeCartItem);
     const totalPrice = sanitizedItems.reduce((total, item) => total + (item.product.price.toNumber() * item.quantity), 0);
 
     return res
@@ -52,20 +40,48 @@ export const addItemToCart = async (req: AuthenticatedRequest, res: Response, ne
       return next(new ApiError(400, 'Product ID and valid quantity are required'));
     }
 
+    // Check if product exists
+    const product = await prisma.product.findUnique({ where: { id: productId } });
+    if (!product) {
+      return next(new ApiError(404, 'Product not found'));
+    }
+
+    // Prevent users from adding their own products to cart
+    if (product.sellerId === req.user.id) {
+      return next(new ApiError(400, 'You cannot add your own product to cart'));
+    }
+
+    // Check product status - only AVAILABLE products can be added
+    if (product.status !== 'AVAILABLE') {
+      return next(new ApiError(400, 'This product is not available for purchase'));
+    }
+
+    // Validate stock availability
+    if (product.stock !== null && product.stock < quantity) {
+      return next(new ApiError(400, `Only ${product.stock} items available in stock`));
+    }
+
     const existingItem = await prisma.cartItem.findFirst({
       where: { userId: req.user.id, productId },
     });
 
     if (existingItem) {
+      const newQuantity = existingItem.quantity + quantity;
+
+      // Validate total quantity against stock
+      if (product.stock !== null && product.stock < newQuantity) {
+        return next(new ApiError(400, `Only ${product.stock} items available in stock`));
+      }
+
       const updatedItem = await prisma.cartItem.update({
         where: { id: existingItem.id },
-        data: { quantity: existingItem.quantity + quantity },
+        data: { quantity: newQuantity },
         include: { product: true },
       });
 
       return res
         .status(200)
-        .json(new ApiResponse(200, { item: sanitizedCartItem(updatedItem) }, 'Cart item updated'));
+        .json(new ApiResponse(200, { item: sanitizeCartItem(updatedItem) }, 'Cart item updated'));
     } else {
       const newItem = await prisma.cartItem.create({
         data: { userId: req.user.id, productId, quantity },
@@ -74,7 +90,7 @@ export const addItemToCart = async (req: AuthenticatedRequest, res: Response, ne
 
       return res
         .status(201)
-        .json(new ApiResponse(201, { item: sanitizedCartItem(newItem) }, 'Cart item added'));
+        .json(new ApiResponse(201, { item: sanitizeCartItem(newItem) }, 'Cart item added'));
     }
   } catch (error) {
     return next(new ApiError(500, 'Unable to add item to cart', [], String(error)));
@@ -115,23 +131,40 @@ export const updateItemQuantity = async (req: AuthenticatedRequest, res: Respons
       return next(new ApiError(400, 'Cart item ID and valid quantity are required'));
     }
 
-    const updatedItem = await prisma.cartItem.update({
-      where: { id: cartItemId, userId: req.user.id },
-      data: { quantity },
+    // Fetch cart item with product to validate stock
+    const cartItem = await prisma.cartItem.findUnique({
+      where: { id: cartItemId },
+      include: { product: true },
     });
 
-    if (!updatedItem) {
+    if (!cartItem) {
       return next(new ApiError(404, 'Cart item not found'));
     }
 
-    const refreshedItem = await prisma.cartItem.findUnique({
+    // Verify ownership
+    if (cartItem.userId !== req.user.id) {
+      return next(new ApiError(403, 'Forbidden'));
+    }
+
+    // Validate product status
+    if (cartItem.product.status !== 'AVAILABLE') {
+      return next(new ApiError(400, 'This product is no longer available'));
+    }
+
+    // Validate stock availability
+    if (cartItem.product.stock !== null && cartItem.product.stock < quantity) {
+      return next(new ApiError(400, `Only ${cartItem.product.stock} items available in stock`));
+    }
+
+    const updatedItem = await prisma.cartItem.update({
       where: { id: cartItemId },
+      data: { quantity },
       include: { product: true },
     });
 
     return res
       .status(200)
-      .json(new ApiResponse(200, { item: sanitizedCartItem(refreshedItem!) }, 'Cart item quantity updated'));
+      .json(new ApiResponse(200, { item: sanitizeCartItem(updatedItem) }, 'Cart item quantity updated'));
   } catch (error) {
     return next(new ApiError(500, 'Unable to update item quantity', [], String(error)));
   }
